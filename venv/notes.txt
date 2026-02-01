@@ -1,0 +1,14 @@
+----- create venv------
+windows: py/-m venv venv
+
+----Activate Venv-------
+windows: .\venv\Scripts\activate
+
+----Install Flask-----
+windows: pip install Flask
+
+----Save dependencies to a TXT----
+windows: pip freeze > requirements.txt
+
+-----Install SQlite3-------
+Windows: (On a Command Prompt ) winget install SQlite.SQlite
