@@ -263,27 +263,12 @@ def get_expense(expense_id):
     }), 200
 
 #-------------EXPENSE(Delete)(user_id)---------------
-@app.delete("/api/expenses/<int:expense_id>")
-def delete_expenses_by_id(expense_id):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM expenses WHERE id = ?", (expense_id,))
-    if cursor.fetchone() is None:
-        conn.close()
-        return jsonify({"success": False, "message": "Expense not found"}), 404
-
-    cursor.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
-    conn.commit()
-    conn.close()
-
-    return jsonify({"success": True,
-     "message": "Expense deleted successfully"
-     }), 200
-
-#-------------EXPENSE(PUT)(user_id)---------------
 @app.put("/api/expenses/<int:expense_id>")
 def update_expense_by_id(expense_id):
     data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "No data found"}), 400
 
     title = data.get("title")
     description = data.get("description")
@@ -296,27 +281,33 @@ def update_expense_by_id(expense_id):
     cursor = conn.cursor()
 
     try:
-        if not data: 
-            return jsonify({"error": "No data found"}),400
         cursor.execute("""
             UPDATE expenses
-            SET title = ?, description = ?, amount = ?,date = ?, category = ?,user_id = ?
+            SET title = ?, description = ?, amount = ?, date = ?, category = ?, user_id = ?
             WHERE id = ?
         """, (title, description, amount, date_str, category, user_id, expense_id))
+
         conn.commit()
+
+       
+        if cursor.rowcount == 0:
+            return jsonify({
+                "error": "Expense not found"
+            }), 404
+
         return jsonify({
             "success": True,
             "message": "Expense updated successfully"
         }), 200
-    except sqlite3.IntegrityError as e: 
-        #IntegrityError is most likely when an attribute has any specfic options
-        return jsonify({"error":f"Something went wrong: {str(e)}"}),400
-    except sqlite3.OperationalError as e:
-        #OperationalError wraps SQL syntax errors, missing table/columns
-        return jsonify({"error": f"Database Operational Error: {str(e)}"}),500
-    finally: 
-        conn.close()
 
+    except sqlite3.IntegrityError as e:
+        return jsonify({"error": f"Something went wrong: {str(e)}"}), 400
+
+    except sqlite3.OperationalError as e:
+        return jsonify({"error": f"Database Operational Error: {str(e)}"}), 500
+
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     init_db()
