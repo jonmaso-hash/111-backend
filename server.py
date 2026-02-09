@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 import sqlite3
 
 app = Flask(__name__)
@@ -35,15 +35,15 @@ def init_db():
     )
     """)
 
-    conn.commit()
-    conn.close()
+    conn.commit() #save changes to the db
+    conn.close() #Close the connection to the db
 
-
+#--------Health-----------
 @app.get("/api/health")
 def health_check():
     return jsonify({"status": "OK"}), 200
 
-
+#--------Register-----------
 @app.post("/api/register")
 def register():
     data = request.get_json() #retrieving data sent from the user
@@ -59,13 +59,12 @@ def register():
 
     return jsonify({"message": "User registered successfully"}), 201
 
-
+#--------Users (GET)-----------
 @app.get("/api/users")
 def get_users():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
+    conn = sqlite3.connect(DB_NAME) 
+    conn.row_factory = sqlite3.Row #Allow colums to be retrieved by name (e.g. row["name"])
     cursor = conn.cursor()
-
     cursor.execute("SELECT id, name, email FROM users")
     rows = cursor.fetchall()
     conn.close()
@@ -84,15 +83,16 @@ def get_users():
         "data": users
     }), 200
 
-
-@app.get("/api/users/<int:user_id>")
+#--------Users(GET)(<user_id>)-----------
+#http://127.0.0.1:5000/api/users/2
+@app.get("/api/users/<int:user_id>") #RESTFUL
 def get_user_by_id(user_id):
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-
+    #validate if the user exist
     cursor.execute("SELECT id, name, email FROM users WHERE id=?", (user_id,))
-    row = cursor.fetchone()
+    row = cursor.fetchone() #True
     conn.close()
 
     if not row:
@@ -107,57 +107,50 @@ def get_user_by_id(user_id):
         }
     }), 200
 
-
+#--------Users(PUT)(/<user_id>)-----------
 @app.put("/api/users/<int:user_id>")
 def update_user(user_id):
     data = request.get_json()
-    if not data:
-        return jsonify({"error": "Invalid JSON body"}), 400
-
+    name = data.get("name")
+    email = data.get("email")
+    
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-
-    cursor.execute("SELECT id FROM users WHERE id=?", (user_id,))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({"error": "User not found"}), 404
-
-    cursor.execute("""
-        UPDATE users
-        SET
-            name = COALESCE(?, name),
-            email = COALESCE(?, email),
-            password = COALESCE(?, password)
-        WHERE id = ?
-    """, (
-        data.get("name"),
-        data.get("email"),
-        data.get("password"),
-        user_id
-    ))
-
+    cursor.execute("UPDATE users SET name=?, email=? WHERE id=?", (name, email, user_id,))
     conn.commit()
     conn.close()
 
-    return jsonify({"success": True, "message": "User updated successfully"}), 200
+    return jsonify({
+        "success": True,
+        "MESSAGE": "User updated sucessfully"
+    }), 200
 
 
+#--------Users(DELETE)(/user_id)-----------
 @app.delete("/api/users/<int:user_id>")
 def delete_user(user_id):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
+    #validate if user exits
     cursor.execute("SELECT id FROM users WHERE id=?", (user_id,))
     if not cursor.fetchone():
         conn.close()
-        return jsonify({"success": False, "message": "User not found"}), 404
+        return jsonify({
+        "success": False, 
+        "message": "User not found"
+        }), 404
 
     cursor.execute("DELETE FROM users WHERE id=?", (user_id,))
     conn.commit()
     conn.close()
 
-    return jsonify({"success": True, "message": "User deleted successfully"}), 200
+    return jsonify({
+        "success": True,
+        "message": "User deleted successfully"
+        }), 200
 
+#-------------EXPENSE(POST)---------------
 @app.post("/api/expenses")
 def create_expense():
     data = request.get_json()
@@ -197,6 +190,141 @@ def create_expense():
         "success": True,
         "message": "Expense created successfully"
     }), 201
+
+#-------------EXPENSE(GET)---------------
+@app.get("/api/expenses")
+def get_expenses():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            id,
+            title,
+            description,
+            amount,
+            date,
+            category,
+            user_id
+        FROM expenses
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+
+    expenses = [
+        {
+            "id": row["id"],
+            "title": row["title"],
+        #   "description": row["description"],
+        #   "amount": row["amount"],
+        # "date": row["date"],
+            "category": row["category"], 
+            "user_id": row["user_id"]
+        }
+        for row in rows
+    ]
+
+    return jsonify({
+        "success": True,
+        "data": expenses,
+        "message": "expenses retrieved sucessfully"
+    }), 200
+
+#-------------EXPENSE(GET)(user_id)---------------
+@app.route("/api/expenses/<int:expense_id>")
+def get_expense(expense_id):
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM expenses WHERE id = ?",(expense_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({
+            "success": False,
+            "message": "Expense not found"
+        }), 404
+
+    return jsonify({
+        "success": True,
+        "message": "Expense retrieved successfully",
+        "data": dict(row)
+    }), 200
+
+#-------------EXPENSE(PUT)(user_id)---------------
+@app.put("/api/expenses/<int:expense_id>")
+def update_expense_by_id(expense_id):
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "No data found"}), 400
+
+    title = data.get("title")
+    description = data.get("description")
+    amount = data.get("amount")
+    date_str = data.get("date")
+    category = data.get("category")
+    user_id = data.get("user", {}).get("id")
+
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            UPDATE expenses
+            SET title = ?, description = ?, amount = ?, date = ?, category = ?, user_id = ?
+            WHERE id = ?
+        """, (title, description, amount, date_str, category, user_id, expense_id))
+
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({
+                "error": "Expense not found"
+            }), 404
+
+        return jsonify({
+            "success": True,
+            "message": "Expense updated successfully"
+        }), 200
+
+    except sqlite3.IntegrityError as e:
+        return jsonify({"error": f"Something went wrong: {str(e)}"}), 400
+
+    except sqlite3.OperationalError as e:
+        return jsonify({"error": f"Database Operational Error: {str(e)}"}), 500
+
+    finally:
+        conn.close()
+
+#-------------Frontend (HTML + Jinja)-------------
+#frontend
+
+#-------------Home (HTML + Jinja)-------------
+@app.get("/")
+def home():
+    return render_template("home.html")
+
+#-------------About (HTML + Jinja)-------------
+@app.get("/about")
+def about():
+    name = "Jonathan Mason"
+    hobbies = ['Weightlifting', 'Sleeping']
+
+    return render_template("about.html", name = name, hobbies = hobbies)
+
+#-------------Contact (HTML + Jinja)-------------
+@app.get("/contact")
+def contact_me():
+    contact_info = {
+    "email": "yukokruma@yuyu.com",
+    "phone": "1800-843-9653",
+    "address": "31st hakusho st, New Orleans, Louisana"
+}
+    return render_template("contact_me.html", contact_info = contact_info)
+
 
 
 
